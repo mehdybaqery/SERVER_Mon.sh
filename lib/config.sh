@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+# ================================================================
+# CONFIGURATION
+# ================================================================
+
+umask 077
+export LC_ALL=C
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+VERSION="1.3.3"
+
+INTERVAL=10
+NETWORK_INTERVAL=30
+SERVICE_INTERVAL=30
+USER_INTERVAL=60
+SECURITY_INTERVAL=60
+SSL_INTERVAL=300
+FILESYSTEM_INTERVAL=60
+CRON_INTERVAL=60
+PROCESS_INTERVAL=10
+CONTAINER_INTERVAL=60
+K8S_INTERVAL=120
+
+LOG_RETENTION_DAYS=30
+
+REPORT_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+HOSTNAME="$(hostname 2>/dev/null || printf 'unknown')"
+LOG_DIR="/var/log/server-health-monitor"
+
+if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+    if (( EUID == 0 )); then
+        printf '%s\n' "Unable to create $LOG_DIR. Refusing unsafe /tmp fallback." >&2
+        exit 1
+    fi
+
+    LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/server-health-monitor"
+
+    mkdir -p "$LOG_DIR" 2>/dev/null || {
+        printf '%s\n' "Unable to create $LOG_DIR." >&2
+        exit 1
+    }
+fi
+
+chmod 750 "$LOG_DIR" 2>/dev/null || true
+
+LOG_FILE="$LOG_DIR/health_${HOSTNAME}_${REPORT_TIMESTAMP}.log"
+JSON_FILE="$LOG_DIR/health_${HOSTNAME}_${REPORT_TIMESTAMP}.json"
+HTML_FILE="$LOG_DIR/health_${HOSTNAME}_${REPORT_TIMESTAMP}.html"
+
+# ================================================================
+# COLORS
+# ================================================================
+
+RESET="\033[0m"
+BOLD="\033[1m"
+DIM="\033[2m"
+
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+MAGENTA="\033[35m"
+CYAN="\033[36m"
+WHITE="\033[37m"
+
+ORANGE="\033[38;5;208m"
+PURPLE="\033[38;5;129m"
+DARK_GRAY="\033[38;5;240m"
+
+TITLE="$RED"
+ACCENT="$CYAN"
+SUCCESS="$GREEN"
+WARNING="$YELLOW"
+ERROR="$RED"
+INFO="$BLUE"
+MUTED="$DARK_GRAY"
+VALUE="$WHITE"
+
+# ================================================================
+# GLOBAL STATE
+# ================================================================
+
+SCORE=100
+CRITICAL=0
+HIGH=0
+MEDIUM=0
+LOW=0
+
+CPU_USAGE=0
+MEM_USAGE=0
+SWAP_USAGE=0
+DISK_USAGE=0
+DISK_INODE_USAGE=0
+
+LOAD_AVG=0
+LOAD_RATIO=0
+CPU_SAMPLE_SECONDS=1
+
+TOTAL_USERS=0
+LOGIN_USERS=0
+UID0_USERS=0
+LOCKED_USERS=0
+SUDO_USERS=0
+TOTAL_GROUPS=0
+USER_NAMES_LIST=""
+
+TOTAL_PROCESSES=0
+ZOMBIE_PROCESSES=0
+TOTAL_THREADS=0
+
+LISTEN_PORTS=0
+ESTABLISHED=0
+TCP_CONNS=0
+UDP_CONNS=0
+
+SSH_STATUS="UNKNOWN"
+SSH_PORT="N/A"
+SSH_ROOT="UNKNOWN"
+SSH_PASSWORD="UNKNOWN"
+SSH_PUBKEY="UNKNOWN"
+SSH_PROTOCOL="UNKNOWN"
+SSH_EMPTY_PASS="UNKNOWN"
+
+SELINUX="UNKNOWN"
+FIREWALL="UNKNOWN"
+NTP_SYNC="UNKNOWN"
+SUDOERS_NOPASSWD=0
+
+DOCKER_STATUS="inactive"
+CONTAINERD_STATUS="inactive"
+KUBELET_STATUS="inactive"
+K8S_FOUND=0
+
+OS_NAME="Unknown"
+KERNEL=""
+ARCH=""
+VIRTUALIZATION=""
+PRIMARY_IP=""
+UPTIME=""
+SERVER_ROLE="Linux Server"
+
+CRON_ENTRIES=0
+
+CPU_MODEL="Unknown"
+CPU_CORES=0
+CPU_FREQ=0
+TOTAL_RAM_MB=0
+DISK_MODEL="Unknown"
+DISK_SIZE="Unknown"
+
+DOCKER_CONTAINERS=0
+DOCKER_IMAGES="N/A"
+DOCKER_VOLUMES="N/A"
+
+K8S_NODES="N/A"
+K8S_PODS="N/A"
+K8S_SERVICES="N/A"
+
+SSL_CERTS_COUNT=0
+SSL_EXPIRING=0
+SSL_EXPIRED=0
+
+PACKAGE_UPDATES="N/A"
+
+LOGGED_USERS="None"
+LOGGED_COUNT=0
+
+FAILED_SERVICES=0
+
+TOP_CPU_PROC=""
+TOP_CPU_VAL=0
+TOP_RAM_PROC=""
+TOP_RAM_VAL=0
+
+declare -a FINDING_LEVEL
+declare -a FINDING_TEXT
+declare -a FINDING_FIX
+
+FINDING_COUNT=0
+
+SUID_FILES_CACHED=()
+SUID_FILES_COUNT=0
+
+LOG_BIG_FILES_CACHED=""
+LOG_SSH_FAILED_CACHED=""
+TOP_PROCESS_CACHE=""
+
+declare -A MONITORED_USER_SET
+declare -A MONITORED_GROUP_SET
+
+declare -a FILESYSTEM_CACHE
+
+ONCE_MODE=0
+JSON_MODE=0
+HTML_MODE=0
+QUIET_MODE=0
+TELEGRAM_MODE=0
+SHOW_TOP_MODE=0
+
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
+
+TELEGRAM_CONFIG="/etc/server-health-monitor/telegram.conf"
+
+if [[ -z "$TELEGRAM_BOT_TOKEN" && -r "$TELEGRAM_CONFIG" ]]; then
+    # shellcheck disable=SC1090
+    . "$TELEGRAM_CONFIG"
+fi
+
+LAST_NETWORK_COLLECTION=0
+LAST_SERVICE_COLLECTION=0
+LAST_USER_COLLECTION=0
+LAST_SECURITY_COLLECTION=0
+LAST_TOP_PROCESS_COLLECTION=0
+LAST_SSL_COLLECTION=0
+LAST_FILESYSTEM_COLLECTION=0
+LAST_CRON_COLLECTION=0
+LAST_PROCESS_COLLECTION=0
+LAST_CONTAINER_COLLECTION=0
+
+LOCK_FD_OPEN=0
+LOCK_FILE=""
