@@ -45,6 +45,6 @@ All checks are **cached** with configurable intervals to minimise system impact,
 Clone the repository and make the main script executable:
 
 ```bash
-git clone https://github.com/yourusername/SERVER-Mon.git
+git clone https://github.com/mehdybaqery/SERVER_Mon.sh.git
 cd SERVER-Mon
 chmod +x monitor.sh
